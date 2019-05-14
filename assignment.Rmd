@@ -1,0 +1,136 @@
+---
+title: "Machien Learning Exercise"
+author: "Soulnight"
+date: "12 Mai 2019"
+output: html_document
+---
+
+```{r knitr, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include = FALSE}
+library(ggplot2) 
+library(caret)
+
+set.seed(1000)
+```
+
+## Data loading and cleaning
+
+At first, we will load the dataset, and remove any unwanted feature. This includes the first seven columns, which do not include sensoric information, as well as features with missing data or little to no variance.
+
+```{r loading and cleaning}
+# Loading data
+raw_data <- read.csv('./pml-training.csv')
+dim(raw_data)
+
+# Cleaning data
+clean_data <- raw_data[, -(1:7)]
+clean_data <- clean_data[, colSums(is.na(clean_data)) == 0]
+clean_data <- clean_data[, -nearZeroVar(clean_data)]
+dim(clean_data)
+```
+
+After doing all of this, 52 (exlcuding `classe`) of 159 features remain.
+
+## Slicing the data into a training and testing set
+
+To test the trained models, the cleaned dataset is randomly split into a training and test set, which 60% being included into the training set.
+
+```{r slicing}
+# Slicing data
+train <- createDataPartition(clean_data$classe, p=0.6, list=FALSE)
+training_data <- clean_data[train, ]
+testing_data <- clean_data[-train, ]
+```
+
+## Modeling
+
+### Cross validation setup
+
+To be less affected by lucky shots during our model evaluation, we will perfom cross validation to average the achived accuracy. The amount of cross validations (five) is a compromise between the required runtime and focus of this assignment. For simplicity, we will keep any other modeling parameter at its default configuration. While this may be suboptimal in a real-world task, the later results will show that this is sufficient for this usecase.
+
+```{r modeling}
+# Modeling
+configuration <- trainControl(method = "cv", number = 5)
+```
+
+### Tree
+
+First, we will start with a tree-based approch.
+
+```{r tree, cache = TRUE}
+## Tree
+model.tree <- train(
+  classe ~ .,
+  data = training_data,
+  method = "rpart",
+  trControl = configuration
+)
+
+confusion.tree <- confusionMatrix(predict(model.tree, testing_data), testing_data$classe)
+plot(confusion.tree$table)
+print(confusion.tree$overall)
+```
+
+Looking at the result, it only reached a 55% accuracy. This is not totally bad for 5 classes (considering that simply guessing would only yield a 20% chance to be correct), but also not that good.
+
+### Random forest
+
+Next, we will try a random forest.
+
+```{r random forest, cache = TRUE}
+## Random forest
+model.random_forest <- train(
+  classe ~ .,
+  data = training_data,
+  method = "rf",
+  trControl = configuration
+)
+
+confusion.random_forest <- confusionMatrix(predict(model.random_forest, testing_data), testing_data$classe)
+plot(confusion.random_forest$table)
+print(confusion.random_forest$overall)
+```
+
+With this, we reached a nearly perfect 99 % accuracy. Usually, we would want to at least increase the cross validation a lot at this point and deeply investigate the reults to ensure that the modell did not overfit. However, as this seems to be out of scope for this assignment, we simply keep it at this for now.
+
+### Gradient boosting
+
+At last, we will apply the gradient boosting method.
+
+```{r gradient boosting, cache = TRUE}
+## Gradient boosting
+model.gradient_boosting <- train(
+  classe ~ .,
+  data = training_data,
+  method = "gbm",
+  trControl = configuration,
+  verbose = FALSE
+)
+
+confusion.gradient_boosting <- confusionMatrix(predict(model.gradient_boosting, testing_data), testing_data$classe)
+plot(confusion.gradient_boosting$table)
+print(confusion.gradient_boosting$overall)
+```
+
+It also reached a near perfect 96 % accuracy.
+
+### Final model selection
+
+Summarised, we got a not to bad but also not very good 55 % using a tree-based approach, a 99 % accuracy using a random forest and 96 % with gradient boosting.
+
+From this, it seems reasonable to choose between the random forest and gradient boosting (under the assumtion that no overfitting or otherwise systematic error occured). While the random forest model is slightly better than gradient boosting one, we cannot be sure whether the difference is significant or not. Especially, as both approches are base on a quite similar idea.
+
+However, in particular if the difference is sufficient, we wont lose on accurancy by selecting random forest.
+
+In production, we might also want to consider the time it takes for each model to predict the outcome, especially if used in a real-time loop. However, this is of no concern for this assignment. Therefore, our final call is the random forest model.
+
+## Prediction
+
+Using the random forest model to predict the outcome of the training/valdiation dataset, we got the following result:
+
+```{r prediction}
+print(predict(model.random_forest, read.csv('./pml-testing.csv')))
+```
